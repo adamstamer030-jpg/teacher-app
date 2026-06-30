@@ -1,0 +1,75 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Prepare Android folder
+        run: |
+          mkdir -p /tmp/our_files
+          cp android/app/src/main/AndroidManifest.xml /tmp/our_files/AndroidManifest.xml
+          cp android/app/build.gradle                 /tmp/our_files/app_build.gradle
+          cp android/build.gradle                     /tmp/our_files/root_build.gradle
+          cp android/gradle.properties                /tmp/our_files/gradle.properties
+          cp android/settings.gradle                  /tmp/our_files/settings.gradle
+          cp android/gradle/wrapper/gradle-wrapper.properties /tmp/our_files/gradle-wrapper.properties
+          cp -r android/app/src/main/res              /tmp/our_files/res || true
+
+          flutter create --project-name teacher_app --org com.teacher /tmp/scaffold
+
+          rm -rf android
+          cp -r /tmp/scaffold/android .
+          chmod +x android/gradlew
+
+          cp /tmp/our_files/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp /tmp/our_files/app_build.gradle    android/app/build.gradle
+          cp /tmp/our_files/root_build.gradle   android/build.gradle
+          cp /tmp/our_files/gradle.properties   android/gradle.properties
+          cp /tmp/our_files/settings.gradle     android/settings.gradle
+          cp /tmp/our_files/gradle-wrapper.properties android/gradle/wrapper/gradle-wrapper.properties
+          cp -r /tmp/our_files/res              android/app/src/main/res
+
+          echo "=== Gradle wrapper version in use ==="
+          cat android/gradle/wrapper/gradle-wrapper.properties
+
+          echo "=== MainActivity.kt ==="
+          find android -name "MainActivity.kt" | xargs wc -l
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons || echo "Skipped"
+
+      - name: Build APK (release)
+        run: flutter build apk --release --no-shrink
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: teacher-app-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
